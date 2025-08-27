@@ -17,7 +17,7 @@ export default function App() {
           <Route path="/hw2" element={<HW2Auth />} />
           <Route path="/hw3" element={<Protected><HW3ProtectedDemo /></Protected>} />
           <Route path="/hw4" element={<Protected><HW4Chat /></Protected>} />
-          <Route path="/hw5" element={<HW5Shop />} />
+          <Route path="/hw5/*" element={<HW5Shop />} />
           <Route path="*" element={<div className="card">Not found. <Link to="/">Home</Link></div>} />
         </Routes>
       </div>
