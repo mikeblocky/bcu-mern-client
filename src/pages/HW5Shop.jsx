@@ -275,7 +275,7 @@ function Checkout() {
             <div className="cc-row">
               <div className={'cc-field' + (!payRules.cardNumber.every(r=>r.ok) ? ' invalid' : '')}>
                 <span className="badge">💳</span>
-                <input inputMode="numeric" placeholder="4242 4242 4242 4242" value={cardNumber} onChange={e => onNumInput(e.target.value)} />
+                <input inputMode="numeric" placeholder="Please type 0000 0000 0000 0000" value={cardNumber} onChange={e => onNumInput(e.target.value)} />
               </div>
               <div className="grid-3">
                 <div className={'cc-field' + (!payRules.expiry.every(r=>r.ok) ? ' invalid' : '')}>
