@@ -13,7 +13,7 @@ export default function NavBar() {
   return (
     <div className="navbar">
       <div className="nav-inner">
-        <div className="brand">BCU MERN — Homeworks 1–5</div>
+        <div className="brand">BCU MERN</div>
         <div className="tabs">
           {tabs.map(t => (
             <NavLink

@@ -27,9 +27,8 @@ export default function App() {
 function Overview() {
   return (
     <div className="card stack">
-      <h1>Homeworks 1–5 — One Website</h1>
+      <h1>Homeworks 1–5 — One website</h1>
       <p>Tasks CRUD + JWT auth, protected routes, realtime chat, and a mini shop. Beige skin, Geist Mono bones.</p>
-      <p>Set <code>VITE_API_URL</code> to point at your Render server.</p>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { Link, Routes, Route, useNavigate, useSearchParams } from 'react-router-
 import { api } from '../api'
 import { useAuth, useAuthFetch } from '../context/AuthContext.jsx'
 import { useToast } from '../components/Toast.jsx'
+import ReqPopup from '../components/ReqPopup.jsx' // ← needed
 
 export default function HW5Shop() {
   return (
@@ -121,8 +122,30 @@ function Checkout() {
   const [error, setError] = useState('')
   const [addr, setAddr] = useState({ fullName:'', line1:'', city:'', country:'', zip:'' })
   const [touched, setTouched] = useState({})
+  const [focus, setFocus] = useState('') // which field is focused
+
   const errs = validateAddr(addr)
   const valid = Object.values(errs).every(v => !v)
+
+  const rulesByField = {
+    fullName: [
+      { id:'f1', label:'Required', ok: !!addr.fullName.trim() },
+      { id:'f2', label:'At least 2 characters', ok: addr.fullName.trim().length >= 2 },
+    ],
+    line1: [
+      { id:'a1', label:'Required', ok: !!addr.line1.trim() },
+    ],
+    city: [
+      { id:'c1', label:'Required', ok: !!addr.city.trim() },
+    ],
+    country: [
+      { id:'co1', label:'Required', ok: !!addr.country.trim() },
+    ],
+    zip: [
+      { id:'z1', label:'Required', ok: !!addr.zip.trim() },
+      { id:'z2', label:'Looks valid (3+ chars)', ok: addr.zip.trim().length >= 3 },
+    ],
+  }
 
   async function placeOrder() {
     setError('')
@@ -137,19 +160,37 @@ function Checkout() {
       nav('/hw5')
     } catch (e) { setError(e.message); toast({ title:'Checkout failed', description:e.message, variant:'error' }); }
   }
+
   return (
     <div className="stack">
       <h2>Checkout</h2>
       <div id="checkout-card" className="card stack" style={{ maxWidth: 520 }}>
-        {Object.entries(addr).map(([k, v]) => (
-          <label key={k} className="stack">
-            <span className="label">{k}</span>
-            <input className={'input' + (touched[k] && errs[k] ? ' invalid' : '')}
-                   value={v} onChange={e => setAddr(a => ({...a, [k]: e.target.value}))}
-                   onBlur={() => setTouched(t => ({ ...t, [k]: true }))} />
-            {touched[k] && errs[k] && <span className="label" style={{ color:'crimson' }}>{errs[k]}</span>}
-          </label>
-        ))}
+        {Object.keys(addr).map(k => {
+          const r = rulesByField[k]
+          const show = focus===k || (touched[k] && !!errs[k])
+          return (
+            <div key={k} className="field" onFocus={() => setFocus(k)} onBlur={() => setFocus('')}>
+              <label className="stack">
+                <span className="label">{k}</span>
+                <input
+                  className={'input' + (touched[k] && errs[k] ? ' invalid' : '')}
+                  value={addr[k]}
+                  onChange={e => setAddr(a => ({...a, [k]: e.target.value}))}
+                  onBlur={() => setTouched(t => ({ ...t, [k]: true }))}
+                  aria-invalid={!!(touched[k] && errs[k])}
+                  aria-describedby={`rules-${k}`}
+                />
+                {touched[k] && errs[k] && <span className="label" style={{ color:'crimson' }}>{errs[k]}</span>}
+              </label>
+              <ReqPopup
+                title={`${k} requirements`}
+                items={r}
+                show={show}
+                ariaId={`rules-${k}`}
+              />
+            </div>
+          )
+        })}
         {error && <div className="label" role="alert" style={{ color:'crimson' }}>{error}</div>}
         <button className="btn" onClick={placeOrder} disabled={!valid}>Place Order</button>
       </div>
@@ -192,14 +233,17 @@ function Admin() {
   )
 }
 
+/* ---- helpers ---- */
+
 function validateAddr(a){
   const e = { fullName:'', line1:'', city:'', country:'', zip:'' }
   if (!a.fullName.trim()) e.fullName = 'Full name is required.'
+  else if (a.fullName.trim().length < 2) e.fullName = 'Min 2 characters.'
   if (!a.line1.trim()) e.line1 = 'Address line is required.'
   if (!a.city.trim()) e.city = 'City is required.'
   if (!a.country.trim()) e.country = 'Country is required.'
   if (!a.zip.trim()) e.zip = 'ZIP/Postal code is required.'
-  else if (a.zip.length < 3) e.zip = 'Please enter a valid code.'
+  else if (a.zip.trim().length < 3) e.zip = 'Please enter a valid code.'
   return e
 }
 

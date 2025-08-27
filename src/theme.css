@@ -93,3 +93,40 @@ a:hover{text-decoration:underline}
 .toast.success{border-color:#cfe7d6;background:#f4fbf6}
 .toast.error{border-color:#f1c2c9;background:#fff4f6}
 .toast.info{border-color:#bee9df;background:#f3fffd}
+
+
+/* ---- Field positioning for popover ---- */
+.field { position: relative; }
+
+/* ---- Popover ---- */
+.popover {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 260px; max-width: 360px;
+  padding: 10px 12px; border-radius: 12px; border: 1px solid #eadfc8;
+  background: #fffaf0; box-shadow: var(--shadow);
+  animation: slide-up .18s ease both; z-index: 1000;
+}
+.popover .title { font-weight: 600; margin-bottom: 6px; }
+.popover .desc  { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.popover .req { display: grid; grid-template-columns: 18px 1fr; align-items: start; gap: 6px; }
+.popover .req + .req { margin-top: 4px; }
+.req .dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 2px; }
+.req-ok .dot  { background: #2fbf71; }
+.req-bad .dot { background: #e36a7a; }
+.req-ok .text { color: #1a5c3b; }
+.req-bad .text { color: #7a1c2a; }
+
+/* Arrow */
+.popover:after {
+  content:''; position:absolute; top:-6px; left:14px; width:10px; height:10px;
+  background:#fffaf0; border-left:1px solid #eadfc8; border-top:1px solid #eadfc8; transform:rotate(45deg);
+}
+
+/* Right-aligned variation (optional) */
+.popover.right { left: auto; right: 0; }
+.popover.right:after { left: auto; right: 14px; }
+
+/* Utility: hide visually while keeping for screen readers if needed */
+.sr-only {
+  position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); border:0;
+}

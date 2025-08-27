@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuthFetch } from '../context/AuthContext.jsx'
 import { useToast } from '../components/Toast.jsx'
+import ReqPopup from '../components/ReqPopup.jsx'
 
 export default function HW1Tasks() {
   const authed = useAuthFetch()
   const { toast } = useToast()
   const [items, setItems] = useState([])
   const [text, setText] = useState('')
+  const [focus, setFocus] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [lastDeleted, setLastDeleted] = useState(null)
@@ -20,16 +22,16 @@ export default function HW1Tasks() {
   }
   useEffect(() => { load() }, [])
 
+  const rules = [
+    { id:'t1', label:'1–120 characters', ok: text.trim().length >= 1 && text.trim().length <= 120 },
+    { id:'t2', label:'Not only spaces', ok: text.length === 0 || text.trim().length > 0 },
+  ]
+  const invalid = rules.some(r => !r.ok)
+
   async function addTask(e) {
     e.preventDefault()
+    if (invalid) { shake('task-form'); return }
     const title = text.trim()
-    if (!title) {
-      shake('task-form'); return
-    }
-    if (title.length > 120) {
-      toast({ title: 'Too long', description: 'Keep titles under 120 chars.', variant: 'error' })
-      return
-    }
     try {
       const optimistic = { _id: 'tmp-' + Math.random(), title, completed: false, optimistic: true }
       setItems(prev => [optimistic, ...prev]); setText('')
@@ -66,10 +68,26 @@ export default function HW1Tasks() {
     <div className="stack">
       <h2>HW1 — Tasks CRUD (Mongo + Express)</h2>
 
-      <form id="task-form" className="card row" onSubmit={addTask}>
-        <input ref={inputRef} className={'input' + (!text.trim() ? ' invalid' : '')} placeholder="Task title…" value={text} onChange={e => setText(e.target.value)} />
-        <button className="btn" disabled={!text.trim()}>Add</button>
-      </form>
+      <div className="field">
+        <form id="task-form" className="card row" onSubmit={addTask} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}>
+          <input
+            ref={inputRef}
+            className={'input' + (invalid ? ' invalid' : '')}
+            placeholder="Task title…"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            aria-invalid={invalid}
+            aria-describedby="rules-task"
+          />
+          <button className="btn" disabled={invalid}>Add</button>
+        </form>
+        <ReqPopup
+          title="Task title must:"
+          items={rules}
+          show={focus || invalid}
+          ariaId="rules-task"
+        />
+      </div>
 
       {loading ? (
         <div className="card stack" aria-busy="true">
