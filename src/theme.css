@@ -130,3 +130,42 @@ a:hover{text-decoration:underline}
 .sr-only {
   position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); border:0;
 }
+
+/* --- Stripe-y Checkout polish --- */
+.checkout-grid{
+  display:grid;grid-template-columns:1.2fr .8fr;gap:18px;align-items:start
+}
+@media (max-width:900px){.checkout-grid{grid-template-columns:1fr}}
+
+.section{display:grid;gap:14px}
+.section-title{font-weight:700;font-size:14px;color:var(--muted);letter-spacing:.02em;text-transform:uppercase}
+
+.divider{height:1px;background:#eadfc8;margin:8px 0}
+
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #eadfc8;border-radius:999px;background:#fffaf0;font-size:12px}
+.price-row{display:flex;justify-content:space-between;align-items:center}
+
+.floating{position:relative}
+.floating input{padding-top:18px}
+.floating label{
+  position:absolute;left:12px;top:8px;font-size:11px;color:var(--muted);pointer-events:none;
+}
+.grid-2{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+.grid-3{display:grid;gap:10px;grid-template-columns:2fr 1fr 1fr}
+
+.cc-row{display:grid;gap:10px}
+.cc-field{
+  display:flex;align-items:center;gap:8px;border:1px solid #e6dfd0;background:white;border-radius:10px;padding:10px 12px;
+}
+.cc-field input{border:none;outline:none;font-family:inherit;font-size:14px;width:100%}
+.cc-field.invalid{border-color:var(--err);box-shadow:0 0 0 3px rgba(176,0,32,.08)}
+.cc-sep{width:1px;background:#eadfc8;height:22px}
+
+.order-list{display:grid;gap:12px}
+.order-head{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.order-card{padding:14px}
+.order-items{margin-top:8px;border-top:1px dashed #eadfc8;padding-top:8px;display:grid;gap:6px}
+.status{padding:4px 8px;border-radius:8px;border:1px solid #eadfc8;background:#fffaf0;font-size:12px}
+.status.paid{border-color:#cfe7d6;background:#f4fbf6}
+.status.pending{border-color:#f1e0b8;background:#fffaf0}
+.status.cancelled{border-color:#f1c2c9;background:#fff4f6}

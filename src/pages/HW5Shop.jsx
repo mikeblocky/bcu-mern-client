@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, Routes, Route, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth, useAuthFetch } from '../context/AuthContext.jsx'
 import { useToast } from '../components/Toast.jsx'
-import ReqPopup from '../components/ReqPopup.jsx' // ← needed
+import ReqPopup from '../components/ReqPopup.jsx'
 
 export default function HW5Shop() {
   return (
@@ -12,6 +12,7 @@ export default function HW5Shop() {
       <Route path="product/:id" element={<ProductDetail />} />
       <Route path="cart" element={<Cart />} />
       <Route path="checkout" element={<Checkout />} />
+      <Route path="orders" element={<Orders />} />   {/* <-- NEW */}
       <Route path="admin" element={<Admin />} />
     </Routes>
   )
@@ -37,6 +38,7 @@ function Catalog() {
       <div className="row">
         <input className="input" placeholder="Search…" value={q} onChange={e => setParams({ q: e.target.value })} />
         <Link className="btn" to="/hw5/cart">Cart</Link>
+        <Link className="btn" to="/hw5/orders">Orders</Link> {/* <-- NEW */}
       </div>
 
       {loading ? (
@@ -115,89 +117,308 @@ function Cart() {
   )
 }
 
+/* ---------- Modernized Checkout (Stripe-ish) ---------- */
 function Checkout() {
   const authed = useAuthFetch()
   const nav = useNavigate()
   const { toast } = useToast()
-  const [error, setError] = useState('')
+
+  // shipping / contact
   const [addr, setAddr] = useState({ fullName:'', line1:'', city:'', country:'', zip:'' })
+  const [email, setEmail] = useState('')
   const [touched, setTouched] = useState({})
-  const [focus, setFocus] = useState('') // which field is focused
+  const [focus, setFocus] = useState('')
+
+  // payment (front-end only; not sent to API)
+  const [cardName, setCardName] = useState('')
+  const [cardNumber, setCardNumber] = useState('')
+  const [expiry, setExpiry] = useState('')
+  const [cvc, setCvc] = useState('')
 
   const errs = validateAddr(addr)
-  const valid = Object.values(errs).every(v => !v)
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  const cart = useMemo(() => JSON.parse(localStorage.getItem('cart') || '[]'), [])
+  const subtotal = cart.reduce((s, it) => s + it.price * it.quantity, 0)
+  const shipping = subtotal > 75 ? 0 : 6
+  const total = subtotal + shipping
 
+  // payment validations (like Stripe UI)
+  const cardDigits = cardNumber.replace(/\D/g, '')
+  const payRules = {
+    cardName: [
+      { id:'n1', label:'Required', ok: !!cardName.trim() },
+      { id:'n2', label:'Letters/spaces only', ok: cardName.trim()==='' || /^[a-zA-Z\s.'-]+$/.test(cardName) },
+    ],
+    cardNumber: [
+      { id:'c1', label:'16 digits (spaces OK)', ok: cardDigits.length === 16 },
+      { id:'c2', label:'Passes Luhn check', ok: luhn(cardDigits) },
+    ],
+    expiry: [
+      { id:'e1', label:'MM/YY format', ok: /^\d{2}\/\d{2}$/.test(expiry) },
+      { id:'e2', label:'Not expired', ok: validExpiry(expiry) },
+    ],
+    cvc: [
+      { id:'v1', label:'3 digits', ok: /^\d{3}$/.test(cvc) },
+    ],
+  }
+  const paymentValid = Object.values(payRules).flat().every(r => r.ok)
+  const shippingValid = Object.values(errs).every(v => !v) && emailOk
+  const allValid = shippingValid && paymentValid && cart.length > 0
+
+  function onNumInput(v) {
+    // Format: 4242 4242 4242 4242
+    const digits = v.replace(/\D/g, '').slice(0,16)
+    const groups = digits.match(/.{1,4}/g) || []
+    setCardNumber(groups.join(' '))
+  }
+  function onExpiry(v) {
+    const d = v.replace(/\D/g, '').slice(0,4)
+    let out = d
+    if (d.length >= 3) out = d.slice(0,2) + '/' + d.slice(2)
+    setExpiry(out)
+  }
+
+  async function placeOrder() {
+    setTouched({ fullName:true, line1:true, city:true, country:true, zip:true })
+    if (!allValid) return shake('checkout-card')
+    try {
+      const items = JSON.parse(localStorage.getItem('cart') || '[]')
+      if (!items.length) return
+      const order = await authed('/api/orders', {
+        method: 'POST',
+        body: { items, shippingAddress: { ...addr, email }, total }
+      })
+      localStorage.removeItem('cart')
+      toast({ title:'Order placed', description: order._id, variant:'success' })
+      nav('/hw5/orders')
+    } catch (e) {
+      toast({ title:'Checkout failed', description:e.message, variant:'error' })
+    }
+  }
+
+  // rules popovers (reuse)
   const rulesByField = {
     fullName: [
       { id:'f1', label:'Required', ok: !!addr.fullName.trim() },
       { id:'f2', label:'At least 2 characters', ok: addr.fullName.trim().length >= 2 },
     ],
-    line1: [
-      { id:'a1', label:'Required', ok: !!addr.line1.trim() },
-    ],
-    city: [
-      { id:'c1', label:'Required', ok: !!addr.city.trim() },
-    ],
-    country: [
-      { id:'co1', label:'Required', ok: !!addr.country.trim() },
-    ],
-    zip: [
+    line1: [{ id:'a1', label:'Required', ok: !!addr.line1.trim() }],
+    city:  [{ id:'c1', label:'Required', ok: !!addr.city.trim() }],
+    country:[{ id:'co1', label:'Required', ok: !!addr.country.trim() }],
+    zip:   [
       { id:'z1', label:'Required', ok: !!addr.zip.trim() },
       { id:'z2', label:'Looks valid (3+ chars)', ok: addr.zip.trim().length >= 3 },
     ],
-  }
-
-  async function placeOrder() {
-    setError('')
-    setTouched({ fullName:true, line1:true, city:true, country:true, zip:true })
-    if (!valid) return shake('checkout-card')
-    try {
-      const items = JSON.parse(localStorage.getItem('cart') || '[]')
-      if (!items.length) return
-      const order = await authed('/api/orders', { method: 'POST', body: { items, shippingAddress: addr } })
-      localStorage.removeItem('cart')
-      toast({ title:'Order placed', description: order._id, variant:'success' })
-      nav('/hw5')
-    } catch (e) { setError(e.message); toast({ title:'Checkout failed', description:e.message, variant:'error' }); }
+    email: [
+      { id:'m1', label:'Looks like an email', ok: emailOk }
+    ]
   }
 
   return (
     <div className="stack">
       <h2>Checkout</h2>
-      <div id="checkout-card" className="card stack" style={{ maxWidth: 520 }}>
-        {Object.keys(addr).map(k => {
-          const r = rulesByField[k]
-          const show = focus===k || (touched[k] && !!errs[k])
-          return (
-            <div key={k} className="field" onFocus={() => setFocus(k)} onBlur={() => setFocus('')}>
+
+      <div className="checkout-grid">
+        {/* LEFT: details */}
+        <div className="card section" id="checkout-card">
+          <div className="section">
+            <div className="section-title">Contact</div>
+            <div className="field" onFocus={() => setFocus('email')} onBlur={() => setFocus('')}>
               <label className="stack">
-                <span className="label">{k}</span>
+                <span className="label">Email</span>
                 <input
-                  className={'input' + (touched[k] && errs[k] ? ' invalid' : '')}
-                  value={addr[k]}
-                  onChange={e => setAddr(a => ({...a, [k]: e.target.value}))}
-                  onBlur={() => setTouched(t => ({ ...t, [k]: true }))}
-                  aria-invalid={!!(touched[k] && errs[k])}
-                  aria-describedby={`rules-${k}`}
+                  className={'input' + (!emailOk ? ' invalid' : '')}
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  aria-invalid={!emailOk}
+                  aria-describedby="rules-email"
+                  placeholder="you@example.com"
                 />
-                {touched[k] && errs[k] && <span className="label" style={{ color:'crimson' }}>{errs[k]}</span>}
               </label>
-              <ReqPopup
-                title={`${k} requirements`}
-                items={r}
-                show={show}
-                ariaId={`rules-${k}`}
-              />
+              <ReqPopup title="Email" items={rulesByField.email} show={focus==='email' || !emailOk} ariaId="rules-email" />
             </div>
-          )
-        })}
-        {error && <div className="label" role="alert" style={{ color:'crimson' }}>{error}</div>}
-        <button className="btn" onClick={placeOrder} disabled={!valid}>Place Order</button>
+          </div>
+
+          <div className="divider" />
+
+          <div className="section">
+            <div className="section-title">Shipping</div>
+            <div className="grid-2">
+              <FieldWithPopup k="fullName" label="Full Name" value={addr.fullName} setValue={v=>setAddr(a=>({...a, fullName:v}))}
+                touched={touched} setTouched={setTouched} errs={errs} rules={rulesByField} focus={focus} setFocus={setFocus} />
+              <FieldWithPopup k="line1" label="Address Line" value={addr.line1} setValue={v=>setAddr(a=>({...a, line1:v}))}
+                touched={touched} setTouched={setTouched} errs={errs} rules={rulesByField} focus={focus} setFocus={setFocus} />
+            </div>
+            <div className="grid-3">
+              <FieldWithPopup k="city" label="City" value={addr.city} setValue={v=>setAddr(a=>({...a, city:v}))}
+                touched={touched} setTouched={setTouched} errs={errs} rules={rulesByField} focus={focus} setFocus={setFocus} />
+              <FieldWithPopup k="country" label="Country" value={addr.country} setValue={v=>setAddr(a=>({...a, country:v}))}
+                touched={touched} setTouched={setTouched} errs={errs} rules={rulesByField} focus={focus} setFocus={setFocus} />
+              <FieldWithPopup k="zip" label="ZIP" value={addr.zip} setValue={v=>setAddr(a=>({...a, zip:v}))}
+                touched={touched} setTouched={setTouched} errs={errs} rules={rulesByField} focus={focus} setFocus={setFocus} />
+            </div>
+          </div>
+
+          <div className="divider" />
+
+          <div className="section">
+            <div className="section-title">Payment</div>
+
+            <div className="floating">
+              <label className="label">Cardholder Name</label>
+              <input className={'input' + (!payRules.cardName.every(r=>r.ok) ? ' invalid' : '')}
+                     placeholder="e.g., Jane Doe" value={cardName} onChange={e => setCardName(e.target.value)}
+                     aria-invalid={!payRules.cardName.every(r=>r.ok)} />
+              <ReqPopup title="Cardholder" items={payRules.cardName} show={!payRules.cardName.every(r=>r.ok)} ariaId="rules-name" />
+            </div>
+
+            <div className="cc-row">
+              <div className={'cc-field' + (!payRules.cardNumber.every(r=>r.ok) ? ' invalid' : '')}>
+                <span className="badge">💳</span>
+                <input inputMode="numeric" placeholder="4242 4242 4242 4242" value={cardNumber} onChange={e => onNumInput(e.target.value)} />
+              </div>
+              <div className="grid-3">
+                <div className={'cc-field' + (!payRules.expiry.every(r=>r.ok) ? ' invalid' : '')}>
+                  <input inputMode="numeric" placeholder="MM/YY" value={expiry} onChange={e => onExpiry(e.target.value)} />
+                </div>
+                <div className={'cc-field' + (!payRules.cvc.every(r=>r.ok) ? ' invalid' : '')}>
+                  <input inputMode="numeric" placeholder="CVC" value={cvc} onChange={e => setCvc(e.target.value.replace(/\D/g,'').slice(0,3))} />
+                </div>
+                <div className="badge">Test mode</div>
+              </div>
+            </div>
+
+            {/* tiny requirement hints */}
+            <div className="label" style={{marginTop:6}}>
+              We don’t store card data (demo UI only).
+            </div>
+          </div>
+
+          <button className="btn" onClick={placeOrder} disabled={!allValid}>
+            {allValid ? 'Pay & Place Order' : 'Complete details to pay'}
+          </button>
+        </div>
+
+        {/* RIGHT: summary */}
+        <div className="card section">
+          <div className="section-title">Order Summary</div>
+          <div className="stack">
+            {cart.map((it, i) => (
+              <div key={i} className="price-row">
+                <div>{it.name} × {it.quantity}</div>
+                <div>${(it.price * it.quantity).toFixed(2)}</div>
+              </div>
+            ))}
+            {cart.length === 0 && <div className="label">Cart is empty.</div>}
+            <div className="divider" />
+            <div className="price-row"><span>Subtotal</span><strong>${subtotal.toFixed(2)}</strong></div>
+            <div className="price-row"><span>Shipping</span><strong>{shipping ? `$${shipping.toFixed(2)}` : <span className="badge">Free</span>}</strong></div>
+            <div className="divider" />
+            <div className="price-row"><span>Total</span><strong>${total.toFixed(2)}</strong></div>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
+function FieldWithPopup({ k, label, value, setValue, touched, setTouched, errs, rules, focus, setFocus }) {
+  const show = focus===k || (touched[k] && !!errs[k])
+  return (
+    <div className="field" onFocus={() => setFocus(k)} onBlur={() => setFocus('')}>
+      <label className="stack">
+        <span className="label">{label}</span>
+        <input
+          className={'input' + (touched[k] && errs[k] ? ' invalid' : '')}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onBlur={() => setTouched(t => ({ ...t, [k]: true }))}
+          aria-invalid={!!(touched[k] && errs[k])}
+          aria-describedby={`rules-${k}`}
+        />
+        {touched[k] && errs[k] && <span className="label" style={{ color:'crimson' }}>{errs[k]}</span>}
+      </label>
+      <ReqPopup title={`${label} requirements`} items={rules[k]} show={show} ariaId={`rules-${k}`} />
+    </div>
+  )
+}
+
+/* ---------- Orders ---------- */
+function Orders() {
+  const { user } = useAuth()
+  const authed = useAuthFetch()
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [all, setAll] = useState(false) // admin toggle
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true); setError('')
+      try {
+        const path = user?.isAdmin && all ? '/api/admin/orders' : '/api/orders'
+        const data = await authed(path)
+        // normalize to array
+        setOrders(Array.isArray(data) ? data : data.items || [])
+      } catch (e) { setError(e.message) }
+      finally { setLoading(false) }
+    })()
+  }, [all, user?.isAdmin])
+
+  return (
+    <div className="stack">
+      <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
+        <h2>Orders</h2>
+        {user?.isAdmin && (
+          <label className="row">
+            <input type="checkbox" checked={all} onChange={e=>setAll(e.target.checked)} />
+            <span className="label">View all (admin)</span>
+          </label>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="stack">
+          <div className="card skeleton" style={{height:64}} />
+          <div className="card skeleton" style={{height:64}} />
+        </div>
+      ) : error ? (
+        <div className="card label" style={{color:'crimson'}}>{error}</div>
+      ) : (
+        <div className="order-list">
+          {orders.map(o => (
+            <div key={o._id} className="card order-card slide-up">
+              <div className="order-head">
+                <div className="row">
+                  <span className="badge">#{short(o._id)}</span>
+                  <span className="label">{formatDate(o.createdAt)}</span>
+                </div>
+                <div className={'status ' + (o.status || 'pending')}>
+                  {o.status || 'pending'}
+                </div>
+              </div>
+              <div className="price-row" style={{marginTop:8}}>
+                <div className="label">{(o.items?.length || 0)} item(s)</div>
+                <div><strong>${(o.total ?? sum(o.items)).toFixed(2)}</strong></div>
+              </div>
+              <div className="order-items">
+                {(o.items || []).map((it, i) => (
+                  <div key={i} className="row" style={{justifyContent:'space-between'}}>
+                    <div>{it.name || it.product?.name || 'Item'} × {it.quantity}</div>
+                    <div>${(it.price * it.quantity).toFixed(2)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {orders.length === 0 && <div className="card label">No orders yet.</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---- Admin ---- */
 function Admin() {
   const authed = useAuthFetch()
   const { user } = useAuth()
@@ -234,7 +455,6 @@ function Admin() {
 }
 
 /* ---- helpers ---- */
-
 function validateAddr(a){
   const e = { fullName:'', line1:'', city:'', country:'', zip:'' }
   if (!a.fullName.trim()) e.fullName = 'Full name is required.'
@@ -247,6 +467,30 @@ function validateAddr(a){
   return e
 }
 
+function luhn(numStr){
+  if (numStr.length < 1) return false
+  let sum=0, dbl=false
+  for (let i=numStr.length-1;i>=0;i--){
+    let d = Number(numStr[i])
+    if (dbl){ d*=2; if (d>9) d-=9 }
+    sum+=d; dbl=!dbl
+  }
+  return sum%10===0
+}
+function validExpiry(mmYY){
+  const m = mmYY.match(/^(\d{2})\/(\d{2})$/); if (!m) return false
+  const mm = Number(m[1]); const yy = Number(m[2])
+  if (mm<1 || mm>12) return false
+  const now = new Date()
+  const yr = now.getFullYear()%100
+  const mo = now.getMonth()+1
+  return yy>yr || (yy===yr && mm>=mo)
+}
+function short(id){ return id?.slice?.(0,6) || '—' }
+function sum(items=[]){ return items.reduce((s,it)=>s+(it.price*it.quantity),0) }
+function formatDate(d){
+  try { return new Date(d).toLocaleString() } catch { return '—' }
+}
 function shake(id) {
   const el = document.getElementById(id)
   if (!el) return
